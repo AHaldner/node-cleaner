@@ -2,9 +2,11 @@
 
 Terminal UI to find and remove `node_modules` folders in a directory tree. It scans asynchronously, shows sizes and last modified times, and lets you trigger deletion from the list.
 
-## Run it
+## Install
 
-- `cargo run`
+```bash
+cargo install --path .
+```
 
 ## Keys
 
@@ -12,6 +14,12 @@ Terminal UI to find and remove `node_modules` folders in a directory tree. It sc
 - Enter: confirm removal of the selected `node_modules` (with a popup)
 - Esc/n: cancel popup
 - q: quit
+
+## Usage
+
+- Build and install once using the command above.
+- From any folder you want to clean, run `node-cleaner`.
+- The scan starts in the current working directory.
 
 ## Notes
 
