@@ -1,6 +1,7 @@
 use std::{
     fs, io,
     path::{Path, PathBuf},
+    sync::mpsc::Sender,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use walkdir::WalkDir;
@@ -13,17 +14,13 @@ pub struct NodeModulesEntry {
 }
 
 fn dir_size(path: &Path) -> io::Result<u64> {
-    let mut size = 0u64;
-
-    for entry in WalkDir::new(path)
+    let size: u64 = jwalk::WalkDir::new(path)
+        .skip_hidden(false) // Ensure we count .bin and .cache folders
         .into_iter()
-        .filter_map(Result::ok)
+        .filter_map(|result| result.ok())
         .filter(|entry| entry.file_type().is_file())
-    {
-        if let Ok(metadata) = entry.metadata() {
-            size = size.saturating_add(metadata.len());
-        }
-    }
+        .map(|entry| entry.metadata().map(|m| m.len()).unwrap_or(0))
+        .sum();
 
     Ok(size)
 }
@@ -67,9 +64,7 @@ fn humanize_duration(delta: Duration) -> String {
     }
 }
 
-pub fn find_node_modules(root: &Path) -> io::Result<Vec<NodeModulesEntry>> {
-    let mut entries = Vec::new();
-
+pub fn scan_node_modules(root: PathBuf, tx: Sender<NodeModulesEntry>) {
     let mut it = WalkDir::new(root).into_iter();
 
     while let Some(entry) = it.next() {
@@ -85,22 +80,25 @@ pub fn find_node_modules(root: &Path) -> io::Result<Vec<NodeModulesEntry>> {
 
         if entry.file_type().is_dir() && entry.file_name() == "node_modules" {
             let path = entry.path().to_path_buf();
-            let metadata = fs::metadata(&path)?;
+            let tx = tx.clone();
 
-            let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
-            let size_bytes = dir_size(&path)?;
+            rayon::spawn(move || {
+                if let Ok(metadata) = fs::metadata(&path) {
+                    let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
 
-            entries.push(NodeModulesEntry {
-                path,
-                modified,
-                size_bytes,
+                    if let Ok(size_bytes) = dir_size(&path) {
+                        let entry = NodeModulesEntry {
+                            path,
+                            modified,
+                            size_bytes,
+                        };
+
+                        let _ = tx.send(entry);
+                    }
+                }
             });
 
             it.skip_current_dir();
         }
     }
-
-    entries.sort_by_key(|e| std::cmp::Reverse(e.modified));
-
-    Ok(entries)
 }

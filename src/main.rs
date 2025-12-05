@@ -1,5 +1,5 @@
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-use files::{find_node_modules, format_modified, format_size};
+use files::{NodeModulesEntry, format_modified, format_size, scan_node_modules};
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
@@ -9,7 +9,13 @@ use ratatui::{
     text::Line,
     widgets::{Block, Cell, HighlightSpacing, Row, StatefulWidget, Table, TableState},
 };
-use std::{io, path::Path};
+use std::{
+    io,
+    path::Path,
+    sync::mpsc::{self, Receiver},
+    thread,
+    time::Duration,
+};
 
 mod files;
 
@@ -68,18 +74,17 @@ pub struct AppData {
 }
 
 impl AppData {
-    pub fn from_path(root: &Path) -> io::Result<Self> {
-        let entries = find_node_modules(root)?;
-        let items = entries
-            .into_iter()
-            .map(|entry| NodeModuleItem {
-                path: entry.path.display().to_string(),
-                size: format_size(entry.size_bytes),
-                size_bytes: entry.size_bytes,
-                last_modified: format_modified(entry.modified),
-            })
-            .collect();
-        Ok(Self { items })
+    pub fn new() -> Self {
+        Self { items: Vec::new() }
+    }
+
+    pub fn add_entry(&mut self, entry: NodeModulesEntry) {
+        self.items.push(NodeModuleItem {
+            path: entry.path.display().to_string(),
+            size: format_size(entry.size_bytes),
+            size_bytes: entry.size_bytes,
+            last_modified: format_modified(entry.modified),
+        });
     }
 }
 
@@ -119,7 +124,7 @@ impl StatefulWidget for &AppData {
 
                 Row::new(vec![
                     Cell::from(item.path.clone()),
-                    Cell::from(item.size.clone().fg(size_color)),
+                    Cell::from(item.size.clone()).fg(size_color),
                     Cell::from(item.last_modified.clone()),
                 ])
             })
@@ -154,14 +159,23 @@ pub struct App {
     data: AppData,
     state: AppState,
     exit: bool,
+    rx: Receiver<NodeModulesEntry>,
 }
 
 impl App {
     pub fn new(root: &Path) -> io::Result<Self> {
+        let (tx, rx) = mpsc::channel();
+        let root = root.to_path_buf();
+
+        thread::spawn(move || {
+            scan_node_modules(root, tx);
+        });
+
         Ok(Self {
-            data: AppData::from_path(root)?,
+            data: AppData::new(),
             state: AppState::new(),
             exit: false,
+            rx,
         })
     }
 }
@@ -169,6 +183,10 @@ impl App {
 impl App {
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         while !self.exit {
+            while let Ok(entry) = self.rx.try_recv() {
+                self.data.add_entry(entry);
+            }
+
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_events()?;
         }
@@ -181,13 +199,14 @@ impl App {
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
-        match event::read()? {
-            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event)
-            }
-            _ => {}
-        };
-
+        if event::poll(Duration::from_millis(100))? {
+            match event::read()? {
+                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    self.handle_key_event(key_event)
+                }
+                _ => {}
+            };
+        }
         Ok(())
     }
 
