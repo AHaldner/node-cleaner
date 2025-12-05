@@ -24,7 +24,7 @@ fn dir_size(path: &Path) -> io::Result<u64> {
         .into_iter()
         .filter_map(|result| result.ok())
         .filter(|entry| entry.file_type().is_file())
-        .map(|entry| entry.metadata().map(|m| m.len()).unwrap_or(0))
+        .map(|entry| entry.metadata().map(|m| m.len()).map_or(0, |len| len))
         .sum();
 
     Ok(size)
@@ -91,7 +91,7 @@ pub fn scan_node_modules(root: PathBuf, tx: Sender<ScanEvent>) {
 
             rayon::spawn(move || {
                 if let Ok(metadata) = fs::metadata(&path) {
-                    let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
+                    let modified = metadata.modified().map_or(UNIX_EPOCH, |time| time);
 
                     if let Ok(size_bytes) = dir_size(&path) {
                         let entry = NodeModulesEntry {
