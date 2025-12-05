@@ -1,4 +1,5 @@
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use files::{find_node_modules, format_modified, format_size};
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
@@ -8,7 +9,9 @@ use ratatui::{
     text::Line,
     widgets::{Block, Cell, HighlightSpacing, Row, StatefulWidget, Table, TableState},
 };
-use std::io;
+use std::{io, path::Path};
+
+mod files;
 
 #[derive(Debug, Clone)]
 pub struct NodeModuleItem {
@@ -63,37 +66,18 @@ pub struct AppData {
     pub items: Vec<NodeModuleItem>,
 }
 
-impl Default for AppData {
-    fn default() -> Self {
-        Self {
-            items: vec![
-                NodeModuleItem {
-                    path: "./projects/web-app/node_modules".to_string(),
-                    size: "450 MB".to_string(),
-                    last_modified: "2024-01-15".to_string(),
-                },
-                NodeModuleItem {
-                    path: "./projects/api-server/node_modules".to_string(),
-                    size: "120 MB".to_string(),
-                    last_modified: "2024-02-20".to_string(),
-                },
-                NodeModuleItem {
-                    path: "./experiments/react-test/node_modules".to_string(),
-                    size: "850 MB".to_string(),
-                    last_modified: "2023-11-05".to_string(),
-                },
-                NodeModuleItem {
-                    path: "./work/client-portal/node_modules".to_string(),
-                    size: "1.2 GB".to_string(),
-                    last_modified: "2024-03-01".to_string(),
-                },
-                NodeModuleItem {
-                    path: "./legacy/old-site/node_modules".to_string(),
-                    size: "300 MB".to_string(),
-                    last_modified: "2022-08-12".to_string(),
-                },
-            ],
-        }
+impl AppData {
+    pub fn from_path(root: &Path) -> io::Result<Self> {
+        let entries = find_node_modules(root)?;
+        let items = entries
+            .into_iter()
+            .map(|entry| NodeModuleItem {
+                path: entry.path.display().to_string(),
+                size: format_size(entry.size_bytes),
+                last_modified: format_modified(entry.modified),
+            })
+            .collect();
+        Ok(Self { items })
     }
 }
 
@@ -164,13 +148,13 @@ pub struct App {
     exit: bool,
 }
 
-impl Default for App {
-    fn default() -> Self {
-        Self {
-            data: AppData::default(),
+impl App {
+    pub fn new(root: &Path) -> io::Result<Self> {
+        Ok(Self {
+            data: AppData::from_path(root)?,
             state: AppState::new(),
             exit: false,
-        }
+        })
     }
 }
 
@@ -214,8 +198,9 @@ impl App {
 }
 
 fn main() -> io::Result<()> {
+    let root = std::env::current_dir()?;
     let mut terminal = ratatui::init();
-    let app_result = App::default().run(&mut terminal);
+    let app_result = App::new(&root)?.run(&mut terminal);
     ratatui::restore();
     app_result
 }
