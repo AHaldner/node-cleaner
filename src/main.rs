@@ -3,11 +3,13 @@ use files::{NodeModulesEntry, format_modified, format_size, scan_node_modules};
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
-    layout::{Constraint, Rect},
+    layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
     symbols::border,
     text::Line,
-    widgets::{Block, Cell, HighlightSpacing, Row, StatefulWidget, Table, TableState},
+    widgets::{
+        Block, Cell, Gauge, HighlightSpacing, Row, StatefulWidget, Table, TableState, Widget,
+    },
 };
 use std::{
     io,
@@ -16,6 +18,8 @@ use std::{
     thread,
     time::Duration,
 };
+
+use crate::files::ScanEvent;
 
 mod files;
 
@@ -71,11 +75,15 @@ impl AppState {
 #[derive(Debug)]
 pub struct AppData {
     pub items: Vec<NodeModuleItem>,
+    pub total_discovered: u64,
 }
 
 impl AppData {
     pub fn new() -> Self {
-        Self { items: Vec::new() }
+        Self {
+            items: Vec::new(),
+            total_discovered: 0,
+        }
     }
 
     pub fn add_entry(&mut self, entry: NodeModulesEntry) {
@@ -86,12 +94,21 @@ impl AppData {
             last_modified: format_modified(entry.modified),
         });
     }
+
+    pub fn increment_discovered(&mut self) {
+        self.total_discovered += 1;
+    }
 }
 
 impl StatefulWidget for &AppData {
     type State = AppState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        let layout = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]);
+        let chunks = layout.split(area);
+        let table_area = chunks[0];
+        let gauge_area = chunks[1];
+
         let title = Line::from(" Node Cleaner ".bold().magenta());
         let instructions = Line::from(vec![
             " Navigate ".into(),
@@ -150,7 +167,27 @@ impl StatefulWidget for &AppData {
             )
             .highlight_spacing(HighlightSpacing::Always);
 
-        StatefulWidget::render(table, area, buf, &mut state.table_state);
+        StatefulWidget::render(table, table_area, buf, &mut state.table_state);
+
+        let processed_count = self.items.len() as u64;
+        let ratio = if self.total_discovered > 0 {
+            processed_count as f64 / self.total_discovered as f64
+        } else {
+            0.0
+        };
+
+        let ratio = ratio.clamp(0.0, 1.0);
+
+        let gauge = Gauge::default()
+            .block(Block::bordered().title(" Scanning Progress "))
+            .gauge_style(Style::default().fg(Color::Green))
+            .ratio(ratio)
+            .label(format!(
+                "{}/{} scanned",
+                processed_count, self.total_discovered
+            ));
+
+        gauge.render(gauge_area, buf);
     }
 }
 
@@ -159,7 +196,7 @@ pub struct App {
     data: AppData,
     state: AppState,
     exit: bool,
-    rx: Receiver<NodeModulesEntry>,
+    rx: Receiver<ScanEvent>,
 }
 
 impl App {
@@ -183,8 +220,11 @@ impl App {
 impl App {
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         while !self.exit {
-            while let Ok(entry) = self.rx.try_recv() {
-                self.data.add_entry(entry);
+            while let Ok(event) = self.rx.try_recv() {
+                match event {
+                    ScanEvent::Discovered => self.data.increment_discovered(),
+                    ScanEvent::Entry(entry) => self.data.add_entry(entry),
+                }
             }
 
             terminal.draw(|frame| self.draw(frame))?;

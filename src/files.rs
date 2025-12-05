@@ -13,6 +13,11 @@ pub struct NodeModulesEntry {
     pub size_bytes: u64,
 }
 
+pub enum ScanEvent {
+    Discovered,
+    Entry(NodeModulesEntry),
+}
+
 fn dir_size(path: &Path) -> io::Result<u64> {
     let size: u64 = jwalk::WalkDir::new(path)
         .skip_hidden(false) // Ensure we count .bin and .cache folders
@@ -64,7 +69,7 @@ fn humanize_duration(delta: Duration) -> String {
     }
 }
 
-pub fn scan_node_modules(root: PathBuf, tx: Sender<NodeModulesEntry>) {
+pub fn scan_node_modules(root: PathBuf, tx: Sender<ScanEvent>) {
     let mut it = WalkDir::new(root).into_iter();
 
     while let Some(entry) = it.next() {
@@ -82,6 +87,8 @@ pub fn scan_node_modules(root: PathBuf, tx: Sender<NodeModulesEntry>) {
             let path = entry.path().to_path_buf();
             let tx = tx.clone();
 
+            let _ = tx.send(ScanEvent::Discovered);
+
             rayon::spawn(move || {
                 if let Ok(metadata) = fs::metadata(&path) {
                     let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
@@ -93,7 +100,7 @@ pub fn scan_node_modules(root: PathBuf, tx: Sender<NodeModulesEntry>) {
                             size_bytes,
                         };
 
-                        let _ = tx.send(entry);
+                        let _ = tx.send(ScanEvent::Entry(entry));
                     }
                 }
             });
