@@ -17,6 +17,7 @@ mod files;
 pub struct NodeModuleItem {
     pub path: String,
     pub size: String,
+    pub size_bytes: u64,
     pub last_modified: String,
 }
 
@@ -74,6 +75,7 @@ impl AppData {
             .map(|entry| NodeModuleItem {
                 path: entry.path.display().to_string(),
                 size: format_size(entry.size_bytes),
+                size_bytes: entry.size_bytes,
                 last_modified: format_modified(entry.modified),
             })
             .collect();
@@ -109,9 +111,15 @@ impl StatefulWidget for &AppData {
             .items
             .iter()
             .map(|item| {
+                let size_color = match item.size_bytes {
+                    s if s >= 1_073_741_824 => Color::Red,
+                    s if s >= 524_288_000 => Color::Yellow,
+                    _ => Color::Green,
+                };
+
                 Row::new(vec![
                     Cell::from(item.path.clone()),
-                    Cell::from(item.size.clone()),
+                    Cell::from(item.size.clone().fg(size_color)),
                     Cell::from(item.last_modified.clone()),
                 ])
             })
