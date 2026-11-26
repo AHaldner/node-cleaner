@@ -4,8 +4,10 @@ Terminal UI to find and remove `node_modules` folders in a directory tree. It sc
 
 ## Install
 
+This repository uses Rust 1.100.0. Rustup selects it automatically when you run Cargo from the checkout.
+
 ```bash
-cargo install --path .
+cargo install --locked --path .
 ```
 
 ## Keys
