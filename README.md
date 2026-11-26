@@ -4,8 +4,10 @@ Terminal UI to find and remove `node_modules` folders in a directory tree. It sc
 
 ## Install
 
+Requires Rust 1.88 or later.
+
 ```bash
-cargo install --path .
+cargo install --locked --path .
 ```
 
 ## Keys

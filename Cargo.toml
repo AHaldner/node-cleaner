@@ -2,10 +2,11 @@
 name = "node-cleaner"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
 
 [dependencies]
 crossterm = "0.29.0"
-ratatui = "0.29.0"
-walkdir = "2.5.0"
-rayon = "1.10.0"
-jwalk = "0.8.1"
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm_0_29", "layout-cache"] }
+walkdir = "2.5.1"
+rayon = "1.12.0"
+jwalk = "0.9.0"
